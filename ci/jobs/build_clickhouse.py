@@ -156,7 +156,7 @@ def main():
 
     if res and JobStages.BUILD in stages:
         print("\n>>>> Environment variables\n")
-        Shell.check("echo ' && env | sort")
+        Shell.check("env | sort")
         print("\n<<<< Environment variables\n")
         Shell.check("sccache --show-stats")
         Shell.check("find $CTCACHE_DIR -type f")
