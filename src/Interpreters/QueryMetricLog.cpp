@@ -24,7 +24,7 @@
 namespace DB
 {
 
-static auto logger = getLogger("QueryMetricLogPablo");
+static auto logger = getLogger("QueryMetricLog");
 
 String timePointToString(QueryMetricLog::TimePoint time)
 {
