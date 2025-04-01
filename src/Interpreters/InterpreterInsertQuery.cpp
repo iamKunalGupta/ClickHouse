@@ -35,6 +35,7 @@
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
+#include <Processors/Transforms/ApplySquashingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Transforms/NestedElementsValidationTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -321,14 +322,13 @@ void InterpreterInsertQuery::addBuffer(std::unique_ptr<ReadBuffer> buffer)
     owned_buffers.push_back(std::move(buffer));
 }
 
-bool InterpreterInsertQuery::shouldAddSquashingForStorage(const StoragePtr & table) const
+bool InterpreterInsertQuery::shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context_)
 {
-    auto context_ptr = getContext();
-    const Settings & settings = context_ptr->getSettingsRef();
+    const Settings & settings = context_->getSettingsRef();
 
     /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
     /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
-    return !(settings[Setting::distributed_foreground_insert] && table->isRemote()) && !async_insert && !no_squash;
+    return !(settings[Setting::distributed_foreground_insert] && table->isRemote());
 }
 
 QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table)
@@ -463,7 +463,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         return counting;
     });
 
-    if (shouldAddSquashingForStorage(table))
+    if (shouldAddSquashingForStorage(table, getContext()) && !no_squash && !async_insert)
     {
         pipeline.addSimpleTransform(
             [&](const Block & in_header) -> ProcessorPtr
@@ -514,15 +514,12 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         async_insert, skip_destination_table, allow_materialized,
         getContext());
 
-    if (shouldAddSquashingForStorage(table))
+    if (shouldAddSquashingForStorage(table, getContext()) && !no_squash && !async_insert)
     {
         pipeline.addSimpleTransform(
             [&](const Block & in_header) -> ProcessorPtr
             {
-                return std::make_shared<ApplySquashingTransform>(
-                    in_header,
-                    table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-                    table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_bytes] : 0ULL);
+                return std::make_shared<ApplySquashingTransform>(in_header);
             });
     }
 
@@ -596,23 +593,18 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     chain.addSource(std::make_shared<DeduplicationToken::AddTokenInfoTransform>(chain.getInputHeader()));
 
-    if (shouldAddSquashingForStorage(table))
+    if (shouldAddSquashingForStorage(table, getContext()) && !no_squash && !async_insert)
     {
         bool table_prefers_large_blocks = table->prefersLargeBlocks();
 
-        auto squashing = std::make_shared<ApplySquashingTransform>(
+        auto applying = std::make_shared<ApplySquashingTransform>(chain.getInputHeader());
+        chain.addSource(std::move(applying));
+
+        auto planing = std::make_shared<PlanSquashingTransform>(
             chain.getInputHeader(),
             table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
             table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL);
-
-        chain.addSource(std::move(squashing));
-
-        auto balancing = std::make_shared<PlanSquashingTransform>(
-            chain.getInputHeader(),
-            table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-            table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL);
-
-        chain.addSource(std::move(balancing));
+        chain.addSource(std::move(planing));
     }
 
 

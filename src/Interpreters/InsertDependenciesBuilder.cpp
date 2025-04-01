@@ -55,7 +55,6 @@
 #include <Common/logger_useful.h>
 #include "Core/Block.h"
 #include "Core/LogsLevel.h"
-#include "IO/WriteBufferFromString.h"
 #include "Interpreters/StorageID.h"
 #include "Processors/Chunk.h"
 #include "QueryPipeline/Chain.h"
@@ -897,6 +896,19 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDPrivate view_id) const
     auto inner_table_id = inner_tables.at(view_id);
     auto inner_table_storage = storages.at(inner_table_id);
     Block output_header = output_headers.at(view_id);
+
+    bool no_squash = false;
+    bool should_add_squashing = InterpreterInsertQuery::shouldAddSquashingForStorage(inner_table_storage, insert_context) && !no_squash && !async_insert;
+    if (should_add_squashing)
+    {
+        bool table_prefers_large_blocks = inner_table_storage->prefersLargeBlocks();
+        const auto & settings = insert_context->getSettingsRef();
+
+        result.addSource(std::make_shared<SquashingTransform>(
+            output_header,
+            table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
+            table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL));
+    }
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     result.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right after Inner query", output_header));

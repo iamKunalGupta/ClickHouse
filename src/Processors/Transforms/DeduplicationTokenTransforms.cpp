@@ -156,11 +156,6 @@ void CheckTokenTransform::transform(Chunk & chunk)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk has to have DedupTokenInfo as ChunkInfo, {}", debug);
     }
-
-    LOG_TEST(log, "debug: {}, token: {}, columns {} rows {}", debug, token_info->debugToken(), chunk.getNumColumns(), chunk.getNumRows());
-
-    LOG_DEBUG(log, "chunk rows {}, columns {}, strtuct {}, infos {}",
-    chunk.getNumRows(), chunk.getNumColumns(), chunk.dumpStructure(), chunk.getChunkInfos().debug());
 }
 #endif
 

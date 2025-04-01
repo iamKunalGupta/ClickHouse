@@ -64,7 +64,7 @@ public:
 
     void addBuffer(std::unique_ptr<ReadBuffer> buffer);
 
-    bool shouldAddSquashingForStorage(const StoragePtr & table) const;
+    static bool shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context);
 
 private:
 
