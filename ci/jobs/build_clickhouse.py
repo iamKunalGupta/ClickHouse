@@ -155,7 +155,9 @@ def main():
         res = results[-1].is_ok()
 
     if res and JobStages.BUILD in stages:
-        Shell.check("echo '\n>>>> Environment variables\n' && env | sort && echo '\n<<<< Environment variables\n'")
+        print("\n>>>> Environment variables\n")
+        Shell.check("echo ' && env | sort")
+        print("\n<<<< Environment variables\n")
         Shell.check("sccache --show-stats")
         Shell.check("find $CTCACHE_DIR -type f")
         if build_type in BUILD_TYPE_TO_DEB_PACKAGE_TYPE:
